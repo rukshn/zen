@@ -41,7 +41,17 @@ fn resolve_credentials(
 #[derive(Serialize)]
 pub struct McpToolInfo {
 	pub name: String,
+	pub title: Option<String>,
 	pub description: Option<String>,
+	pub input_schema: Value,
+}
+
+#[derive(Serialize)]
+pub struct ToolDef {
+	pub server: String,
+	pub name: String,
+	pub description: Option<String>,
+	pub input_schema: Value,
 }
 
 #[derive(Serialize)]
@@ -51,8 +61,18 @@ pub struct McpToolResult {
 	pub structured: Option<Value>,
 }
 
-fn to_tool_info(name: String, description: Option<String>) -> McpToolInfo {
-	McpToolInfo { name, description }
+fn tool_input_schema(t: &rmcp::model::Tool) -> Value {
+	rmcp::serde_json::to_value(&*t.input_schema)
+		.unwrap_or_else(|_| Value::Object(Default::default()))
+}
+
+fn to_tool_info(t: &rmcp::model::Tool) -> McpToolInfo {
+	McpToolInfo {
+		name: t.name.to_string(),
+		title: t.title.clone(),
+		description: t.description.as_ref().map(|d| d.to_string()),
+		input_schema: tool_input_schema(t),
+	}
 }
 
 #[tauri::command]
@@ -67,10 +87,7 @@ pub async fn mcp_connect(
 
 	if let Some(client) = guard.get(&server) {
 		let tools = client.list_all_tools().await.map_err(|e| e.to_string())?;
-		return Ok(tools
-			.into_iter()
-			.map(|t| to_tool_info(t.name.to_string(), t.description.map(|d| d.to_string())))
-			.collect());
+		return Ok(tools.into_iter().map(|t| to_tool_info(&t)).collect());
 	}
 
 	let credentials_path = resolve_credentials(&app, &client_id, &client_secret)?;
@@ -87,7 +104,7 @@ pub async fn mcp_connect(
 	let tools = client.list_all_tools().await.map_err(|e| e.to_string())?;
 	let info: Vec<McpToolInfo> = tools
 		.into_iter()
-		.map(|t| to_tool_info(t.name.to_string(), t.description.map(|d| d.to_string())))
+		.map(|t| to_tool_info(&t))
 		.collect();
 
 	guard.insert(server, client);
@@ -107,8 +124,28 @@ pub async fn mcp_list_tools(
 	Ok(result
 		.tools
 		.into_iter()
-		.map(|t| to_tool_info(t.name.to_string(), t.description.map(|d| d.to_string())))
+		.map(|t| to_tool_info(&t))
 		.collect())
+}
+
+#[tauri::command]
+pub async fn mcp_tool_defs(
+	state: State<'_, McpManager>,
+) -> Result<Vec<ToolDef>, String> {
+	let guard = state.clients.lock().await;
+	let mut defs = Vec::new();
+	for (server, client) in guard.iter() {
+		let result = client.list_tools(None).await.map_err(|e| e.to_string())?;
+		for t in result.tools {
+			defs.push(ToolDef {
+				server: server.clone(),
+				name: t.name.to_string(),
+				description: t.description.as_ref().map(|d| d.to_string()),
+				input_schema: tool_input_schema(&t),
+			});
+		}
+	}
+	Ok(defs)
 }
 
 #[tauri::command]

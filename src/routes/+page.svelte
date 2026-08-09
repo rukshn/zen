@@ -2,10 +2,34 @@
   import * as Breadcrumb from "$lib/components/ui/breadcrumb/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
-  import { Textarea } from "$lib/components/ui/textarea";
   import SidebarLeft from "$lib/components/sidebar-left.svelte";
   import SidebarRight from "$lib/components/sidebar-right.svelte";
-  import { Button } from "$lib/components/ui/button";
+  import Database from "@tauri-apps/plugin-sql";
+  import Chat from "@/components/chat.svelte";
+
+  const KEY = "deepseek_api_key";
+  const DB_PATH = "sqlite:settings.db";
+
+  let apiKey = $state("");
+  let loading = $state(true);
+
+  const onMount = async () => {
+    const db = await Database.load(DB_PATH);
+    const rows = await db.select<{ key: string; value: string }[]>(
+      "SELECT key, value FROM settings WHERE key IN ($1)",
+      [KEY],
+    );
+
+    if (rows[0]) {
+      apiKey = rows[0].value;
+    }
+
+    await db.close();
+    loading = false;
+  };
+
+  const sendRequest = () => {};
+  onMount();
 </script>
 
 <Sidebar.Provider>
@@ -32,14 +56,13 @@
       </div>
     </header>
     <div class="flex flex-1 flex-col gap-4 p-4">
-      <div class="mx-auto h-auto w-full max-w-3xl rounded-xl bg-muted/50 px-4 py-3">
-        <Textarea placeholder="What would you like to do today?" autofocus class="resize-none focus-visible:border-0 focus-visible:ring-0 border-none outline-0 shadow-none" />
-        <div class="flex mt-2 justify-end">
-          <Button>Ask</Button>
-        </div>
+      <div
+        class="mx-auto h-auto w-full max-w-3xl rounded-xl bg-muted/50 px-4 py-3"
+      >
+        <Chat />
       </div>
       <div
-        class="mx-auto h-[100vh] w-full max-w-3xl rounded-xl bg-muted/50"
+        class="mx-auto h-screen w-full max-w-3xl rounded-xl bg-muted/50"
       ></div>
     </div>
   </Sidebar.Inset>

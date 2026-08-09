@@ -1,3 +1,4 @@
+mod llm;
 mod mcp;
 
 use mcp::client::McpManager;
@@ -18,10 +19,12 @@ pub fn run() {
             greet,
             mcp::client::mcp_connect,
             mcp::client::mcp_list_tools,
+            mcp::client::mcp_tool_defs,
             mcp::client::mcp_call_tool,
             mcp::client::mcp_status,
             mcp::client::mcp_disconnect,
-            mcp::client::mcp_server_auth
+            mcp::client::mcp_server_auth,
+            llm::llm_stream_chat
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

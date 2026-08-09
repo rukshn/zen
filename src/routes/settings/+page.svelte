@@ -9,6 +9,7 @@
   import Database from "@tauri-apps/plugin-sql";
   import CalendarFilledIcon from "@iconify-svelte/tabler/calendar-filled";
   import { invoke } from "@tauri-apps/api/core";
+  import { checkCalendarConnection } from "@/funcs";
 
   const DB_PATH = "sqlite:settings.db";
   const KEY = "deepseek_api_key";
@@ -24,6 +25,7 @@
   let authMessage = $state("");
   let authError = $state("");
   let isAuthing = $state(false);
+  let googleCalendarConnected = $state("Connect Google Calendar");
 
   const init = async () => {
     const db = await Database.load(DB_PATH);
@@ -42,23 +44,14 @@
 
     await db.close();
     loading = false;
-    await checkCalendarConnection()
+    await connectCalendar();
   };
 
-  const checkCalendarConnection = async () => {
-    try {
-      await invoke("mcp_connect", { server: "google-calendar", clientId: googleClientId, clientSecret: googleClientSecret })
-      const connection = await invoke("mcp_call_tool", {
-        server: "google-calendar",
-        tool: "list-calendars",
-        arguments: {},
-      });
-      if (connection.is_error === false) {
-        console.log("connected", connection);
-      }
-      console.log(connection)
-    } catch (e) {
-      console.log(e);
+  const connectCalendar = async () => {
+    const connection = await checkCalendarConnection();
+    if (connection) {
+      googleCalendarConnected = "Calendar - Connected";
+    } else {
     }
   };
 
@@ -206,7 +199,8 @@
           <Button
             onclick={authenticateGoogleCalendar}
             disabled={isAuthing}
-            class="bg-blue-700"><CalendarFilledIcon />Google Calendar</Button
+            class="bg-blue-700"
+            ><CalendarFilledIcon />{googleCalendarConnected}</Button
           >
           {#if authMessage}<p class="mt-2 text-sm text-muted-foreground">
               {authMessage}
