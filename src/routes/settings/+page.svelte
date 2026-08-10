@@ -10,11 +10,15 @@
   import CalendarFilledIcon from "@iconify-svelte/tabler/calendar-filled";
   import { invoke } from "@tauri-apps/api/core";
   import { checkCalendarConnection } from "@/funcs";
+  import * as Avatar from "$lib/components/ui/avatar";
+  import { profile, loadProfile } from "@/store/profile.svelte";
+  import { onMount } from "svelte";
 
   const DB_PATH = "sqlite:settings.db";
   const KEY = "deepseek_api_key";
   const GOOGLE_CLIENT_ID_KEY = "google_client_id";
   const GOOGLE_CLIENT_SECRET_KEY = "google_client_secret";
+  const AVATAR_KEY = "user_avatar";
 
   let apiKey = $state("");
   let googleClientId = $state("");
@@ -26,8 +30,55 @@
   let authError = $state("");
   let isAuthing = $state(false);
   let googleCalendarConnected = $state("Connect Google Calendar");
+  let avatarError = $state("");
 
-  const init = async () => {
+  const readAsDataUrl = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = String(reader.result);
+      await uploadAvatar(dataUrl); // → DB upsert + store update
+    };
+    reader.onerror = () => {
+      avatarError = "Could not read the file.";
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const onPickAvatar = (e: Event) => {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+
+    input.value = ""; // allow re-selecting the same file later
+
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      avatarError = "Please choose an image file.";
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      avatarError = "Image too large (max 2MB).";
+      return;
+    }
+
+    avatarError = "";
+    readAsDataUrl(file); // pass the File object to the reader
+  };
+
+  const uploadAvatar = async (dataUrl: string) => {
+    try {
+      const db = await Database.load(DB_PATH);
+      await db.execute(
+        "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
+        [AVATAR_KEY, dataUrl],
+      );
+      profile.avatar = dataUrl;
+      await db.close();
+    } catch (e) {
+      console.log("error occured in setting avatar");
+    }
+  };
+
+  onMount(async () => {
     const db = await Database.load(DB_PATH);
     await db.execute(
       "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
@@ -45,7 +96,9 @@
     await db.close();
     loading = false;
     await connectCalendar();
-  };
+
+    await loadProfile()
+  });
 
   const connectCalendar = async () => {
     const connection = await checkCalendarConnection();
@@ -95,7 +148,7 @@
       isAuthing = false;
     }
   };
-  init();
+ 
 </script>
 
 <Sidebar.Provider>
@@ -202,12 +255,31 @@
             class="bg-blue-700"
             ><CalendarFilledIcon />{googleCalendarConnected}</Button
           >
+          <Button disabled={isAuthing}>Connect Email</Button>
           {#if authMessage}<p class="mt-2 text-sm text-muted-foreground">
               {authMessage}
             </p>{/if}
           {#if authError}<p class="mt-2 text-sm text-red-600">
               {authError}
             </p>{/if}
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-1 flex-col p-4">
+      <div class="mx-auto w-full max-w-3xl rounded-xl border bg-background p-6">
+        <h1 class="text-lg font-semibold">Your Aatar</h1>
+        <div class="flex gap-2">
+          <Input
+            type="file"
+            id="picture"
+            onchange={onPickAvatar}
+            accept="image/*"
+          />
+          <Avatar.Root>
+            <Avatar.Image src={profile.avatar}></Avatar.Image>
+            <Avatar.Fallback>R</Avatar.Fallback>
+          </Avatar.Root>
         </div>
       </div>
     </div>
