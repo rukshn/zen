@@ -3,9 +3,11 @@
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
   import SidebarLeft from "$lib/components/sidebar-left.svelte";
+  import Feed from "$lib/components/feed.svelte";
   import SidebarRight from "$lib/components/sidebar-right.svelte";
   import Database from "@tauri-apps/plugin-sql";
   import Chat from "@/components/chat.svelte";
+  import { loadProfile } from "$lib/store/profile.svelte";
 
   const KEY = "deepseek_api_key";
   const DB_PATH = "sqlite:settings.db";
@@ -14,6 +16,7 @@
   let loading = $state(true);
 
   const onMount = async () => {
+    await loadProfile();
     const db = await Database.load(DB_PATH);
     const rows = await db.select<{ key: string; value: string }[]>(
       "SELECT key, value FROM settings WHERE key IN ($1)",
@@ -61,9 +64,9 @@
       >
         <Chat />
       </div>
-      <div
-        class="mx-auto h-screen w-full max-w-3xl rounded-xl bg-muted/50"
-      ></div>
+      <div class="mx-auto h-screen w-full max-w-3xl">
+        <Feed />
+      </div>
     </div>
   </Sidebar.Inset>
   <SidebarRight />

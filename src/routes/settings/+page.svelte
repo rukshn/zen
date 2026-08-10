@@ -9,17 +9,21 @@
   import Database from "@tauri-apps/plugin-sql";
   import CalendarFilledIcon from "@iconify-svelte/tabler/calendar-filled";
   import { invoke } from "@tauri-apps/api/core";
-  import { checkCalendarConnection } from "@/funcs";
+  import { checkCalendarConnection, refreshConnections } from "@/funcs";
   import * as Avatar from "$lib/components/ui/avatar";
   import { profile, loadProfile } from "@/store/profile.svelte";
   import { onMount } from "svelte";
+  import EmailIcon from "@iconify-svelte/mage/email";
+  import RefreshIcon from "@iconify-svelte/mage/refresh";
+  import { checkImapConnection, openImapSetupWizard } from "$lib/funcs";
 
   const DB_PATH = "sqlite:settings.db";
   const KEY = "deepseek_api_key";
   const GOOGLE_CLIENT_ID_KEY = "google_client_id";
   const GOOGLE_CLIENT_SECRET_KEY = "google_client_secret";
   const AVATAR_KEY = "user_avatar";
-
+  
+  let connectedAccounts = $state(0);
   let apiKey = $state("");
   let googleClientId = $state("");
   let googleClientSecret = $state("");
@@ -96,8 +100,9 @@
     await db.close();
     loading = false;
     await connectCalendar();
-
-    await loadProfile()
+    const imapAccounts = await checkImapConnection();
+    connectedAccounts = imapAccounts.length
+    await loadProfile();
   });
 
   const connectCalendar = async () => {
@@ -148,7 +153,11 @@
       isAuthing = false;
     }
   };
- 
+
+  const updateConnections = async() => {
+    const imapAccounts = await refreshConnections()
+    connectedAccounts = imapAccounts.length
+  }
 </script>
 
 <Sidebar.Provider>
@@ -248,14 +257,24 @@
           Connect Different Services
         </p>
 
-        <div class="mt-4">
+        <div class="mt-4 flex gap-1.5">
           <Button
             onclick={authenticateGoogleCalendar}
             disabled={isAuthing}
             class="bg-blue-700"
-            ><CalendarFilledIcon />{googleCalendarConnected}</Button
           >
-          <Button disabled={isAuthing}>Connect Email</Button>
+            <CalendarFilledIcon />{googleCalendarConnected}
+          </Button>
+
+          <Button onclick={openImapSetupWizard}>
+            <EmailIcon />
+            {connectedAccounts === 0
+              ? `Connect Email`
+              : `Connected Emails - ${connectedAccounts}`}
+          </Button>
+          <Button variant="secondary" onclick={updateConnections}>
+            <RefreshIcon />
+          </Button>
           {#if authMessage}<p class="mt-2 text-sm text-muted-foreground">
               {authMessage}
             </p>{/if}

@@ -1,7 +1,8 @@
 mod llm;
 mod mcp;
 
-use mcp::client::McpManager;
+use mcp::client::{McpManager, WizardManager};
+use tauri::Manager;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -15,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .manage(McpManager::default())
+        .manage(WizardManager::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             mcp::client::mcp_connect,
@@ -24,8 +26,14 @@ pub fn run() {
             mcp::client::mcp_status,
             mcp::client::mcp_disconnect,
             mcp::client::mcp_server_auth,
+            mcp::client::imap_open_setup_wizard,
             llm::llm_stream_chat
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<WizardManager>().stop();
+            }
+        });
 }

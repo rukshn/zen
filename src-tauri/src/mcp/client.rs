@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Stdio};
+use std::sync::Mutex as StdMutex;
 
 use rmcp::model::CallToolRequestParams;
 use rmcp::service::RunningService;
@@ -6,12 +9,73 @@ use rmcp::transport::TokioChildProcess;
 use rmcp::{serde_json::Value, RoleClient, ServiceExt};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use super::servers;
 
 type McpClient = RunningService<RoleClient, ()>;
+
+pub struct WizardProcess {
+	child: Child,
+	url: String,
+}
+
+pub struct WizardManager {
+	inner: StdMutex<Option<WizardProcess>>,
+}
+
+impl Default for WizardManager {
+	fn default() -> Self {
+		Self {
+			inner: StdMutex::new(None),
+		}
+	}
+}
+
+impl WizardManager {
+	pub fn stop(&self) {
+		if let Ok(mut guard) = self.inner.lock() {
+			if let Some(mut w) = guard.take() {
+				let _ = w.child.kill();
+				let _ = w.child.wait();
+			}
+		}
+	}
+}
+
+fn find_free_port() -> Result<u16, String> {
+	let listener =
+		std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
+	let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+	Ok(port)
+}
+
+fn drain_output(child: &mut Child, prefix: String) {
+	if let Some(stdout) = child.stdout.take() {
+		let p = prefix.clone();
+		std::thread::spawn(move || {
+			for line in BufReader::new(stdout).lines() {
+				match line {
+					Ok(l) => eprintln!("[{p}] {l}"),
+					Err(_) => break,
+				}
+			}
+		});
+	}
+	if let Some(stderr) = child.stderr.take() {
+		let p = prefix.clone();
+		std::thread::spawn(move || {
+			for line in BufReader::new(stderr).lines() {
+				match line {
+					Ok(l) => eprintln!("[{p}] {l}"),
+					Err(_) => break,
+				}
+			}
+		});
+	}
+}
 
 pub struct McpManager {
 	clients: Mutex<HashMap<String, McpClient>>,
@@ -90,8 +154,12 @@ pub async fn mcp_connect(
 		return Ok(tools.into_iter().map(|t| to_tool_info(&t)).collect());
 	}
 
-	let credentials_path = resolve_credentials(&app, &client_id, &client_secret)?;
-	let cfg = servers::resolve(&server, Some(&credentials_path))?;
+	let credentials_path = if server == servers::GOOGLE_CALENDAR_SERVER {
+		Some(resolve_credentials(&app, &client_id, &client_secret)?)
+	} else {
+		None
+	};
+	let cfg = servers::resolve(&server, credentials_path.as_deref())?;
 
 	let mut command = Command::new(&cfg.command);
 	command.args(&cfg.args);
@@ -236,4 +304,37 @@ pub fn mcp_server_auth(
 		});
 	}
 	Ok(())
+}
+
+#[tauri::command]
+pub fn imap_open_setup_wizard(
+	app: AppHandle,
+	state: State<'_, WizardManager>,
+) -> Result<String, String> {
+	let mut guard = state.inner.lock().unwrap();
+	if let Some(w) = guard.as_mut() {
+		if w.child.try_wait().map_err(|e| e.to_string())?.is_none() {
+			let url = w.url.clone();
+			app.opener()
+				.open_url(url.clone(), None::<&str>)
+				.map_err(|e| e.to_string())?;
+			return Ok(url);
+		}
+	}
+
+	let port = find_free_port()?;
+	let url = format!("http://localhost:{port}");
+	let mut cmd = servers::setup_wizard_command(port);
+	cmd.stdin(Stdio::null());
+	cmd.stdout(Stdio::piped());
+	cmd.stderr(Stdio::piped());
+	let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+	drain_output(&mut child, "imap-setup".to_string());
+
+	*guard = Some(WizardProcess { child, url: url.clone() });
+
+	app.opener()
+		.open_url(url.clone(), None::<&str>)
+		.map_err(|e| e.to_string())?;
+	Ok(url)
 }

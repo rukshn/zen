@@ -5,19 +5,20 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
+  import * as Avatar from "$lib/components/ui/avatar";
+  import { profile } from "$lib/store/profile.svelte";
+  import {
+    type ChatMessage,
+    type ToolDefinition,
+  } from "$lib/store/message.svelte";
+  import { messageStore } from "$lib/store/message.svelte";
+  import ThreeDotsLoadingIcon from "@iconify-svelte/eos-icons/three-dots-loading";
 
   let pendingAction = $state(false);
   let userMessage = $state("");
   let message = $state("");
   let hasMessage = $state(false);
   let isStreaming = $state(false);
-
-  type ToolDefinition = {
-    server: string;
-    name: string;
-    description?: string | null;
-    input_schema: Record<string, any>;
-  };
 
   type OpenAiTool = {
     type: "function";
@@ -34,14 +35,6 @@
     function: { name: string; arguments: string };
   };
 
-  type ChatMessage = {
-    role: "user" | "assistant" | "tool";
-    content: string | null;
-    tools?: ToolDefinition[];
-    tool_calls?: ToolCall[];
-    tool_call_id?: string;
-  };
-
   const toOpenAiTools = (defs: ToolDefinition[]): OpenAiTool[] =>
     defs.map((d) => ({
       type: "function",
@@ -52,7 +45,7 @@
       },
     }));
 
-  let messages = $state<ChatMessage[]>([]);
+  let messages = messageStore.messages;
   let unlisteners: UnlistenFn[] = [];
   let activeRequestId: string | null = null;
   let apiKey = "";
@@ -62,7 +55,10 @@
   const MAX_TOOL_ROUNDS = 6;
 
   type ToolCallAcc = { id: string; name: string; arguments: string };
-  let streamAcc: { assistantIndex: number | null; toolCalls: Map<number, ToolCallAcc> } = {
+  let streamAcc: {
+    assistantIndex: number | null;
+    toolCalls: Map<number, ToolCallAcc>;
+  } = {
     assistantIndex: null,
     toolCalls: new Map(),
   };
@@ -93,7 +89,11 @@
         if (Array.isArray(toolCalls)) {
           for (const tc of toolCalls) {
             const idx = tc.index ?? 0;
-            const cur = streamAcc.toolCalls.get(idx) ?? { id: "", name: "", arguments: "" };
+            const cur = streamAcc.toolCalls.get(idx) ?? {
+              id: "",
+              name: "",
+              arguments: "",
+            };
             if (tc.id) cur.id = tc.id;
             if (tc.function?.name) cur.name = tc.function.name;
             if (tc.function?.arguments) cur.arguments += tc.function.arguments;
@@ -163,7 +163,8 @@
 
     const ai = acc.assistantIndex;
     if (ai !== null) {
-      messages[ai].content = `Calling ${calls.map((c) => c.name).join(", ")}...`;
+      messages[ai].content =
+        `Calling ${calls.map((c) => c.name).join(", ")}...`;
       messages[ai].tool_calls = toolCallsMsg;
     }
 
@@ -171,13 +172,17 @@
       calls.map(async (c) => {
         const server = toolLookup.get(c.name);
         try {
-          if (!server) throw new Error(`no server registered for tool "${c.name}"`);
+          if (!server)
+            throw new Error(`no server registered for tool "${c.name}"`);
           const args = c.arguments ? JSON.parse(c.arguments) : {};
-          const res = await invoke<{ text: string; is_error: boolean }>("mcp_call_tool", {
-            server,
-            tool: c.name,
-            arguments: args,
-          });
+          const res = await invoke<{ text: string; is_error: boolean }>(
+            "mcp_call_tool",
+            {
+              server,
+              tool: c.name,
+              arguments: args,
+            },
+          );
           if (res.is_error) return `Tool error: ${res.text}`;
           return res.text || `(tool "${c.name}" returned no text)`;
         } catch (e) {
@@ -187,7 +192,11 @@
     );
 
     results.forEach((content, i) => {
-      messages.push({ role: "tool", tool_call_id: toolCallsMsg[i].id, content });
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCallsMsg[i].id,
+        content,
+      });
     });
 
     if (toolRunCount >= MAX_TOOL_ROUNDS) {
@@ -233,14 +242,23 @@
   };
 </script>
 
-<Textarea
-  placeholder="What would you like to do today?"
-  autofocus
-  class="resize-none focus-visible:border-0 focus-visible:ring-0 border-none outline-0 shadow-none"
-  bind:value={userMessage}
-/>
+<div class="flex">
+  <Avatar.Root>
+    <Avatar.Image class="bg-center" src={profile.avatar}></Avatar.Image>
+    <Avatar.Fallback>R</Avatar.Fallback>
+  </Avatar.Root>
+  <Textarea
+    placeholder="What would you like to do today?"
+    autofocus
+    class="resize-none focus-visible:border-0 focus-visible:ring-0 border-none outline-0 shadow-none"
+    bind:value={userMessage}
+  />
+</div>
 <div class="flex mt-2 justify-end">
   <Button onclick={sendRequest} disabled={isStreaming}>
+    {#if isStreaming}
+      <ThreeDotsLoadingIcon height="1em" />
+    {/if}
     {isStreaming ? "Thinking..." : "Ask"}
   </Button>
 </div>
@@ -258,10 +276,3 @@
     <p class="text-xs">{message}</p>
   </div>
 {/if}
-
-{#each messages as msg}
-  <div class="mt-4">
-    <p class="text-xs font-semibold uppercase">{msg.role}</p>
-    <p class="whitespace-pre-wrap">{msg.content ?? ""}</p>
-  </div>
-{/each}

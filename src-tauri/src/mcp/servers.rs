@@ -1,6 +1,7 @@
 use std::path::Path;
 
 pub const GOOGLE_CALENDAR_SERVER: &str = "google-calendar";
+pub const IMAP_MAIL_SERVER: &str = "imap-mail";
 
 pub struct McpServerConfig {
 	pub command: String,
@@ -119,6 +120,11 @@ pub fn resolve(server: &str, credentials_path: Option<&str>) -> Result<McpServer
 				env,
 			})
 		}
+		IMAP_MAIL_SERVER => Ok(McpServerConfig {
+			command: "npx".to_string(),
+			args: vec!["-y".to_string(), "imap-mcp-server".to_string()],
+			env: Vec::new(),
+		}),
 		other => Err(format!("unknown MCP server: {other}")),
 	}
 }
@@ -135,4 +141,17 @@ pub fn auth_command(
 		cmd.env(key, value);
 	}
 	Ok(cmd)
+}
+
+pub fn setup_wizard_command(port: u16) -> std::process::Command {
+	let mut cmd = std::process::Command::new("npx");
+	cmd.arg("-y")
+		.arg("-p")
+		.arg("imap-mcp-server")
+		.arg("imap-setup")
+		.arg("--skip-claude")
+		.arg("--no-open")
+		.arg("-p")
+		.arg(port.to_string());
+	cmd
 }

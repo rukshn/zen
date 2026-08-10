@@ -4,14 +4,15 @@
 	import Calendars from "./calendars.svelte";
 	import DatePicker from "./date-picker.svelte";
 	import NavUser from "./nav-user.svelte";
-	import type { ComponentProps } from "svelte";
+	import { onMount, type ComponentProps } from "svelte";
+	import {profile} from "$lib/store/profile.svelte"
 
 	// This is sample data.
-	const data = {
+	let data = $state({
 		user: {
 			name: "shadcn",
 			email: "m@example.com",
-			avatar: "/avatars/shadcn.jpg",
+			avatar: "",
 		},
 		calendars: [
 			{
@@ -27,8 +28,11 @@
 				items: ["Travel", "Reminders", "Deadlines"],
 			},
 		],
-	};
+	});
 
+	onMount(() => {
+		data.user.avatar = profile.avatar
+	})
 	let { ref = $bindable(null), ...restProps }: ComponentProps<typeof Sidebar.Root> = $props();
 </script>
 
