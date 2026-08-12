@@ -10,9 +10,9 @@
 	// This is sample data.
 	let data = $state({
 		user: {
-			name: "shadcn",
-			email: "m@example.com",
-			avatar: "",
+			name: "Rukshan",
+			email: "rukshan@ruky.me",
+			avatar: profile.avatar ?? "",
 		},
 		calendars: [
 			{
@@ -30,9 +30,6 @@
 		],
 	});
 
-	onMount(() => {
-		data.user.avatar = profile.avatar
-	})
 	let { ref = $bindable(null), ...restProps }: ComponentProps<typeof Sidebar.Root> = $props();
 </script>
 

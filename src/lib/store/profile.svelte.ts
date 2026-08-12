@@ -1,6 +1,4 @@
-import Database from "@tauri-apps/plugin-sql";
-
-const DB_PATH = "sqlite:settings.db";
+import { getDb } from "./dbstore";
 
 export const profile = $state({avatar: ""})
 
@@ -8,7 +6,7 @@ const AVATAR_KEY = "user_avatar"
 
 export const loadProfile = async () => {
   try {
-    const db = await Database.load(DB_PATH);
+    const db = await getDb()
     await db.execute(
       "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     );
@@ -17,7 +15,6 @@ export const loadProfile = async () => {
       [AVATAR_KEY],
     );
     if (rows[0]) profile.avatar = rows[0].value;
-    await db.close();
   } catch (e) {
     console.error("loadProfile failed:", e);
   }

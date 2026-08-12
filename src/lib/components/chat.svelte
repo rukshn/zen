@@ -29,6 +29,14 @@
     };
   };
 
+  type SearchResult = {
+    name: string;
+    server: string;
+    description: string;
+    input_schema: Record<string, any>;
+    score: number;
+  };
+
   type ToolCall = {
     id: string;
     type: "function";
@@ -49,6 +57,7 @@
   let unlisteners: UnlistenFn[] = [];
   let activeRequestId: string | null = null;
   let apiKey = "";
+  let apiEndpoint = "";
   let apiTools: OpenAiTool[] = [];
   let toolLookup = new Map<string, string>();
   let toolRunCount = 0;
@@ -87,6 +96,11 @@
 
         const toolCalls = delta?.tool_calls;
         if (Array.isArray(toolCalls)) {
+          // Create assistant message if tool_calls arrive but no text yet
+          if (streamAcc.assistantIndex === null) {
+            messages.push({ role: "assistant", content: null });
+            streamAcc.assistantIndex = messages.length - 1;
+          }
           for (const tc of toolCalls) {
             const idx = tc.index ?? 0;
             const cur = streamAcc.toolCalls.get(idx) ?? {
@@ -132,18 +146,19 @@
       await invoke("llm_stream_chat", {
         requestId: activeRequestId,
         payload: {
-          model: "deepseek-v4-flash",
+          model: "gpt-5.6-luna",
           messages: apiMessages,
           tools: apiTools,
           tool_choice: "auto",
         },
         apiKey,
+        apiEndpoint,
       });
     } catch (e) {
       activeRequestId = null;
       isStreaming = false;
       hasMessage = true;
-      message = String(e);
+      message = String(e);  
     }
   };
 
@@ -154,6 +169,12 @@
 
     const calls: ToolCallAcc[] = [...acc.toolCalls.values()];
     console.log("[llm] tool calls received:", calls);
+
+    // Extract original tool name (strip server_ prefix)
+    const getOriginalToolName = (prefixedName: string): string => {
+      const idx = prefixedName.indexOf("_");
+      return idx >= 0 ? prefixedName.slice(idx + 1) : prefixedName;
+    };
 
     const toolCallsMsg: ToolCall[] = calls.map((c) => ({
       id: c.id || `call_${c.name}`,
@@ -175,11 +196,12 @@
           if (!server)
             throw new Error(`no server registered for tool "${c.name}"`);
           const args = c.arguments ? JSON.parse(c.arguments) : {};
+          const originalToolName = getOriginalToolName(c.name);
           const res = await invoke<{ text: string; is_error: boolean }>(
             "mcp_call_tool",
             {
               server,
-              tool: c.name,
+              tool: originalToolName,
               arguments: args,
             },
           );
@@ -219,10 +241,34 @@
     }
 
     try {
-      const toolDefs: ToolDefinition[] = await invoke("mcp_tool_defs");
+      // Try search first with user message as query
+      const searchResults: SearchResult[] = await invoke("search_tools", {
+        query: userMessage,
+        limit: 10,
+      });
+
+      let toolDefs: ToolDefinition[];
+      if (searchResults.length > 0) {
+        // Use searched tools
+        toolDefs = searchResults.map((r) => ({
+          name: r.name,
+          server: r.server,
+          description: r.description,
+          input_schema: r.input_schema,
+        }));
+      } else {
+        // Fallback: get all tools
+        const allTools: ToolDefinition[] = await invoke("mcp_tool_defs");
+        toolDefs = allTools;
+      }
+
       toolLookup = new Map(toolDefs.map((d) => [d.name, d.server]));
       apiTools = toOpenAiTools(toolDefs);
-      apiKey = (await getAPIKey()) ?? "";
+      const apiEndpointAndKey = await getAPIKey();
+      if (apiEndpointAndKey) {
+        apiKey = apiEndpointAndKey.apiKey ?? "";
+        apiEndpoint = apiEndpointAndKey.apiEndpoint ?? "";
+      }
     } catch (e) {
       hasMessage = true;
       message = String(e);

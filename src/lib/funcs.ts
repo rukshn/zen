@@ -42,13 +42,14 @@ export const checkCalendarConnection = async () => {
 export const getAPIKey = async () => {
   const db = await Database.load(DB_PATH);
   const rows = await db.select<{ key: string; value: string }[]>(
-    "SELECT key, value FROM settings WHERE key IN ($1)",
-    ["deepseek_api_key"],
+    "SELECT key, value FROM settings WHERE key IN ($1, $2)",
+    ["deepseek_api_key", "api_endpoint"],
   );
 
   if (rows) {
-    const apiKey = rows[0].value;
-    return apiKey;
+    const apiKey = rows.find((r) => r.key === "deepseek_api_key")?.value;
+    const apiEndpoint = rows.find((r) => r.key === "api_endpoint")?.value;
+    return { apiKey: apiKey ?? "", apiEndpoint: apiEndpoint ?? "" };
   }
   return undefined;
 };
@@ -145,6 +146,10 @@ export const disconnectImap = async (): Promise<void> => {
     throw e;
   }
 };
+
+export const refreshRegistry = async () => {
+  await invoke("mcp_tool_defs")
+}
 
 export const refreshConnections = async () => {
   await invoke("mcp_disconnect", { server: "imap-mail" }).catch(() => {});

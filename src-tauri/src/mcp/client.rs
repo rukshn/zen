@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Stdio};
 use std::sync::Mutex as StdMutex;
@@ -11,7 +12,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 
 use super::servers;
 
@@ -78,13 +79,13 @@ fn drain_output(child: &mut Child, prefix: String) {
 }
 
 pub struct McpManager {
-	clients: Mutex<HashMap<String, McpClient>>,
+	clients: TokioMutex<HashMap<String, McpClient>>,
 }
 
 impl Default for McpManager {
 	fn default() -> Self {
 		Self {
-			clients: Mutex::new(HashMap::new()),
+			clients: TokioMutex::new(HashMap::new()),
 		}
 	}
 }
@@ -198,7 +199,9 @@ pub async fn mcp_list_tools(
 
 #[tauri::command]
 pub async fn mcp_tool_defs(
+	app: AppHandle,
 	state: State<'_, McpManager>,
+	search_state: State<'_, StdMutex<Option<crate::toolsearch::AppState>>>,
 ) -> Result<Vec<ToolDef>, String> {
 	let guard = state.clients.lock().await;
 	let mut defs = Vec::new();
@@ -213,6 +216,22 @@ pub async fn mcp_tool_defs(
 			});
 		}
 	}
+
+	let app_data_dir = app
+		.path()
+		.app_data_dir()
+		.map_err(|e| format!("failed to resolve app data dir: {e}"))?;
+	fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
+	let path = app_data_dir.join("mcp-tool-defs.json");
+	fs::write(&path, serde_json::to_string_pretty(&defs).map_err(|e| e.to_string())?)
+		.map_err(|e| e.to_string())?;
+
+	if let Ok(mut guard) = search_state.lock() {
+		if let Some(ref mut app_state) = *guard {
+			let _ = app_state.refresh(&app);
+		}
+	}
+
 	Ok(defs)
 }
 

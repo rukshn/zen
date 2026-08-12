@@ -6,7 +6,6 @@
   import { Separator } from "$lib/components/ui/separator/index.js";
   import SidebarLeft from "$lib/components/sidebar-left.svelte";
   import SidebarRight from "$lib/components/sidebar-right.svelte";
-  import Database from "@tauri-apps/plugin-sql";
   import CalendarFilledIcon from "@iconify-svelte/tabler/calendar-filled";
   import { invoke } from "@tauri-apps/api/core";
   import { checkCalendarConnection, refreshConnections } from "@/funcs";
@@ -16,13 +15,14 @@
   import EmailIcon from "@iconify-svelte/mage/email";
   import RefreshIcon from "@iconify-svelte/mage/refresh";
   import { checkImapConnection, openImapSetupWizard } from "$lib/funcs";
+  import { getDb } from "@/store/dbstore";
 
-  const DB_PATH = "sqlite:settings.db";
   const KEY = "deepseek_api_key";
   const GOOGLE_CLIENT_ID_KEY = "google_client_id";
   const GOOGLE_CLIENT_SECRET_KEY = "google_client_secret";
   const AVATAR_KEY = "user_avatar";
-  
+  const API_ENDPOINT = "api_endpoint";
+
   let connectedAccounts = $state(0);
   let apiKey = $state("");
   let googleClientId = $state("");
@@ -35,6 +35,7 @@
   let isAuthing = $state(false);
   let googleCalendarConnected = $state("Connect Google Calendar");
   let avatarError = $state("");
+  let apiEndpoint = $state("");
 
   const readAsDataUrl = (file: File) => {
     const reader = new FileReader();
@@ -70,38 +71,37 @@
 
   const uploadAvatar = async (dataUrl: string) => {
     try {
-      const db = await Database.load(DB_PATH);
+      const db = await getDb()
       await db.execute(
         "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
         [AVATAR_KEY, dataUrl],
       );
       profile.avatar = dataUrl;
-      await db.close();
     } catch (e) {
       console.log("error occured in setting avatar");
     }
   };
 
   onMount(async () => {
-    const db = await Database.load(DB_PATH);
+    const db = await getDb();
     await db.execute(
       "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     );
     const rows = await db.select<{ key: string; value: string }[]>(
-      "SELECT key, value FROM settings WHERE key IN ($1, $2, $3)",
-      [KEY, GOOGLE_CLIENT_ID_KEY, GOOGLE_CLIENT_SECRET_KEY],
+      "SELECT key, value FROM settings WHERE key IN ($1, $2, $3, $4)",
+      [KEY, GOOGLE_CLIENT_ID_KEY, GOOGLE_CLIENT_SECRET_KEY, API_ENDPOINT],
     );
     for (const row of rows) {
       if (row.key === KEY) apiKey = row.value;
       if (row.key === GOOGLE_CLIENT_ID_KEY) googleClientId = row.value;
       if (row.key === GOOGLE_CLIENT_SECRET_KEY) googleClientSecret = row.value;
+      if (row.key === API_ENDPOINT) apiEndpoint = row.value;
     }
 
-    await db.close();
     loading = false;
     await connectCalendar();
     const imapAccounts = await checkImapConnection();
-    connectedAccounts = imapAccounts.length
+    connectedAccounts = imapAccounts.length;
     await loadProfile();
   });
 
@@ -116,7 +116,7 @@
   const save = async () => {
     saving = true;
     saved = false;
-    const db = await Database.load(DB_PATH);
+    const db = await getDb()
     await db.execute(
       "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
       [KEY, apiKey],
@@ -129,7 +129,10 @@
       "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
       [GOOGLE_CLIENT_SECRET_KEY, googleClientSecret],
     );
-    await db.close();
+    await db.execute(
+      "INSERT INTO settings (key, value) VALUES ($1, $2) on CONFLICT(key) DO UPDATE SET value = $2",
+      [API_ENDPOINT, apiEndpoint],
+    );
     saving = false;
     saved = true;
   };
@@ -154,10 +157,16 @@
     }
   };
 
-  const updateConnections = async() => {
-    const imapAccounts = await refreshConnections()
-    connectedAccounts = imapAccounts.length
-  }
+  const updateMCPTools = async () => {
+    loading = true;
+    await invoke("mcp_tool_defs");
+    loading = false;
+  };
+
+  const updateConnections = async () => {
+    const imapAccounts = await refreshConnections();
+    connectedAccounts = imapAccounts.length;
+  };
 </script>
 
 <Sidebar.Provider>
@@ -198,8 +207,18 @@
             }}
           >
             <div class="flex flex-col gap-2">
+              <label for="api_endpoint" class="text-sm font-medium"
+                >API Endpoint</label
+              >
+              <Input
+                id="api_endpoint"
+                type="url"
+                placeholder="https://...."
+                bind:value={apiEndpoint}
+                autocomplete="off"
+              />
               <label for="deepseek-api-key" class="text-sm font-medium">
-                DeepSeek API Key
+                API Key
               </label>
               <Input
                 id="deepseek-api-key"
@@ -300,6 +319,15 @@
             <Avatar.Fallback>R</Avatar.Fallback>
           </Avatar.Root>
         </div>
+      </div>
+    </div>
+
+    <div class="flex flex-1 flex-col p-4">
+      <div class="mx-auto w-full max-w-3xl rounded-xl border bg-background p-6">
+        <h1 class="text-lg font-semibold">Actions</h1>
+        <Button variant="secondary" onclick={updateMCPTools}
+          >Update MCP tools</Button
+        >
       </div>
     </div>
   </Sidebar.Inset>
