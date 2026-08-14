@@ -15,6 +15,7 @@ It allows me to connect my email accounts, calendar for now and schedule meeting
 - [ ] To add browsing support so I can also fetch content from websites to summarize and connect information 
 - [ ] To add skills support 
 - [ ] To add project structure - so I can switch between different projects
+- [ ] Add to do list to track work 
 
 ## Supported Repositories 
 
@@ -25,3 +26,6 @@ It allows me to connect my email accounts, calendar for now and schedule meeting
 
 <img width="1918" height="1119" alt="image" src="https://github.com/user-attachments/assets/7fbc57f9-3293-4844-b72f-3afb9d45bc72" />
 
+#### Inspiration 
+
+From the Gstak / Gbrain and the resent talk by Garry Tan about Gstak / Gbrain - https://www.ycombinator.com/library/WX-garry-tan-own-your-intelligence
