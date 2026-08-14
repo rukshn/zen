@@ -21,3 +21,7 @@ It allows me to connect my email accounts, calendar for now and schedule meeting
 - For Email - https://github.com/nikolausm/imap-mcp-server 
 - For Calendar - [Google Calendar MCP API](https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server)
 
+## Screenshots 
+
+<img width="1918" height="1119" alt="image" src="https://github.com/user-attachments/assets/7fbc57f9-3293-4844-b72f-3afb9d45bc72" />
+
