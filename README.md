@@ -12,9 +12,9 @@ It allows me to connect my email accounts, calendar for now and schedule meeting
 
 ## Plan 
 
-[ ] To add browsing support so I can also fetch content from websites to summarize and connect information 
-[ ] To add skills support 
-[ ] To add project structure - so I can switch between different projects
+- [ ] To add browsing support so I can also fetch content from websites to summarize and connect information 
+- [ ] To add skills support 
+- [ ] To add project structure - so I can switch between different projects
 
 ## Supported Repositories 
 
