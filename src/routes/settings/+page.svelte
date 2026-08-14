@@ -16,12 +16,14 @@
   import RefreshIcon from "@iconify-svelte/mage/refresh";
   import { checkImapConnection, openImapSetupWizard } from "$lib/funcs";
   import { getDb } from "@/store/dbstore";
+  import Label from "@/components/ui/label/label.svelte";
 
   const KEY = "deepseek_api_key";
   const GOOGLE_CLIENT_ID_KEY = "google_client_id";
   const GOOGLE_CLIENT_SECRET_KEY = "google_client_secret";
   const AVATAR_KEY = "user_avatar";
   const API_ENDPOINT = "api_endpoint";
+  const MODEL_NAME = "model_name";
 
   let connectedAccounts = $state(0);
   let apiKey = $state("");
@@ -36,6 +38,7 @@
   let googleCalendarConnected = $state("Connect Google Calendar");
   let avatarError = $state("");
   let apiEndpoint = $state("");
+  let modelName = $state("");
 
   const readAsDataUrl = (file: File) => {
     const reader = new FileReader();
@@ -71,7 +74,7 @@
 
   const uploadAvatar = async (dataUrl: string) => {
     try {
-      const db = await getDb()
+      const db = await getDb();
       await db.execute(
         "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
         [AVATAR_KEY, dataUrl],
@@ -88,14 +91,23 @@
       "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     );
     const rows = await db.select<{ key: string; value: string }[]>(
-      "SELECT key, value FROM settings WHERE key IN ($1, $2, $3, $4)",
-      [KEY, GOOGLE_CLIENT_ID_KEY, GOOGLE_CLIENT_SECRET_KEY, API_ENDPOINT],
+      "SELECT key, value FROM settings WHERE key IN ($1, $2, $3, $4, $5)",
+      [
+        KEY,
+        GOOGLE_CLIENT_ID_KEY,
+        GOOGLE_CLIENT_SECRET_KEY,
+        API_ENDPOINT,
+        MODEL_NAME,
+      ],
     );
+
+    console.log(rows)
     for (const row of rows) {
       if (row.key === KEY) apiKey = row.value;
       if (row.key === GOOGLE_CLIENT_ID_KEY) googleClientId = row.value;
       if (row.key === GOOGLE_CLIENT_SECRET_KEY) googleClientSecret = row.value;
       if (row.key === API_ENDPOINT) apiEndpoint = row.value;
+      if (row.key === MODEL_NAME) modelName = row.value;
     }
 
     loading = false;
@@ -116,7 +128,7 @@
   const save = async () => {
     saving = true;
     saved = false;
-    const db = await getDb()
+    const db = await getDb();
     await db.execute(
       "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
       [KEY, apiKey],
@@ -132,6 +144,10 @@
     await db.execute(
       "INSERT INTO settings (key, value) VALUES ($1, $2) on CONFLICT(key) DO UPDATE SET value = $2",
       [API_ENDPOINT, apiEndpoint],
+    );
+    await db.execute(
+      "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
+      [MODEL_NAME, modelName],
     );
     saving = false;
     saved = true;
@@ -158,14 +174,14 @@
   };
 
   const updateMCPTools = async () => {
-    loading = true;
-    await invoke("mcp_tool_defs");
-    loading = false;
+    const updateTools = await invoke("mcp_tool_defs");
+    console.log(updateTools);
   };
 
   const updateConnections = async () => {
     const imapAccounts = await refreshConnections();
     connectedAccounts = imapAccounts.length;
+    await invoke("mcp_tool_defs");
   };
 </script>
 
@@ -225,6 +241,14 @@
                 type="password"
                 placeholder="sk-…"
                 bind:value={apiKey}
+                autocomplete="off"
+              />
+            </div>
+            <div class="flex flex-col gap-2">
+              <Label for="model_name">Model Name</Label>
+              <Input
+                id="model_name"
+                bind:value={modelName}
                 autocomplete="off"
               />
             </div>

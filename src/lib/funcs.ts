@@ -42,14 +42,15 @@ export const checkCalendarConnection = async () => {
 export const getAPIKey = async () => {
   const db = await Database.load(DB_PATH);
   const rows = await db.select<{ key: string; value: string }[]>(
-    "SELECT key, value FROM settings WHERE key IN ($1, $2)",
-    ["deepseek_api_key", "api_endpoint"],
+    "SELECT key, value FROM settings WHERE key IN ($1, $2, $3)",
+    ["deepseek_api_key", "api_endpoint", "model_name"],
   );
 
   if (rows) {
     const apiKey = rows.find((r) => r.key === "deepseek_api_key")?.value;
     const apiEndpoint = rows.find((r) => r.key === "api_endpoint")?.value;
-    return { apiKey: apiKey ?? "", apiEndpoint: apiEndpoint ?? "" };
+    const modelName = rows.find((r) => r.key === "model_name")?.value
+    return { apiKey: apiKey ?? "", apiEndpoint: apiEndpoint ?? "", modelName: modelName ?? ""};
   }
   return undefined;
 };

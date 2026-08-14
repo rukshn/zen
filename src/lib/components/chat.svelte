@@ -19,6 +19,7 @@
   let message = $state("");
   let hasMessage = $state(false);
   let isStreaming = $state(false);
+  let modelName = $state("")
 
   type OpenAiTool = {
     type: "function";
@@ -119,7 +120,6 @@
       listen<{ requestId: string }>("llm:done", (event) => {
         if (event.payload.requestId !== activeRequestId) return;
         activeRequestId = null;
-        isStreaming = false;
         finalizeTurn();
       }),
 
@@ -146,7 +146,7 @@
       await invoke("llm_stream_chat", {
         requestId: activeRequestId,
         payload: {
-          model: "gpt-5.6-luna",
+          model: modelName || "gpt-5.6-luna",
           messages: apiMessages,
           tools: apiTools,
           tool_choice: "auto",
@@ -158,70 +158,80 @@
       activeRequestId = null;
       isStreaming = false;
       hasMessage = true;
-      message = String(e);  
+      message = String(e);
     }
   };
 
   const finalizeTurn = async () => {
     const acc = streamAcc;
     streamAcc = resetStreamAcc();
-    if (acc.toolCalls.size === 0) return;
+    if (acc.toolCalls.size === 0) {
+      isStreaming = false;
+      return;
+    }
 
     const calls: ToolCallAcc[] = [...acc.toolCalls.values()];
     console.log("[llm] tool calls received:", calls);
+    try {
+      // Extract original tool name (strip server_ prefix)
+      const getOriginalToolName = (prefixedName: string): string => {
+        const idx = prefixedName.indexOf("_");
+        return idx >= 0 ? prefixedName.slice(idx + 1) : prefixedName;
+      };
 
-    // Extract original tool name (strip server_ prefix)
-    const getOriginalToolName = (prefixedName: string): string => {
-      const idx = prefixedName.indexOf("_");
-      return idx >= 0 ? prefixedName.slice(idx + 1) : prefixedName;
-    };
+      const toolCallsMsg: ToolCall[] = calls.map((c) => ({
+        id: c.id || `call_${c.name}`,
+        type: "function",
+        function: { name: c.name, arguments: c.arguments || "{}" },
+      }));
 
-    const toolCallsMsg: ToolCall[] = calls.map((c) => ({
-      id: c.id || `call_${c.name}`,
-      type: "function",
-      function: { name: c.name, arguments: c.arguments || "{}" },
-    }));
+      const ai = acc.assistantIndex;
+      if (ai !== null) {
+        messages[ai].content =
+          `Calling ${calls.map((c) => c.name).join(", ")}...`;
+        messages[ai].tool_calls = toolCallsMsg;
+      }
 
-    const ai = acc.assistantIndex;
-    if (ai !== null) {
-      messages[ai].content =
-        `Calling ${calls.map((c) => c.name).join(", ")}...`;
-      messages[ai].tool_calls = toolCallsMsg;
+      const results = await Promise.all(
+        calls.map(async (c) => {
+          const server = toolLookup.get(c.name);
+          try {
+            if (!server)
+              throw new Error(`no server registered for tool "${c.name}"`);
+            const args = c.arguments ? JSON.parse(c.arguments) : {};
+            const originalToolName = getOriginalToolName(c.name);
+            const res = await invoke<{ text: string; is_error: boolean }>(
+              "mcp_call_tool",
+              {
+                server,
+                tool: originalToolName,
+                arguments: args,
+              },
+            );
+            if (res.is_error) return `Tool error: ${res.text}`;
+            return res.text || `(tool "${c.name}" returned no text)`;
+          } catch (e) {
+            return `Failed to call "${c.name}": ${String(e)}`;
+          }
+        }),
+      );
+
+      results.forEach((content, i) => {
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCallsMsg[i].id,
+          content,
+        });
+      });
+    } catch (e) {
+      isStreaming = false;
+      hasMessage = true;
+      message = `Tool round failed: ${String(e)}`;
+      return;
     }
 
-    const results = await Promise.all(
-      calls.map(async (c) => {
-        const server = toolLookup.get(c.name);
-        try {
-          if (!server)
-            throw new Error(`no server registered for tool "${c.name}"`);
-          const args = c.arguments ? JSON.parse(c.arguments) : {};
-          const originalToolName = getOriginalToolName(c.name);
-          const res = await invoke<{ text: string; is_error: boolean }>(
-            "mcp_call_tool",
-            {
-              server,
-              tool: originalToolName,
-              arguments: args,
-            },
-          );
-          if (res.is_error) return `Tool error: ${res.text}`;
-          return res.text || `(tool "${c.name}" returned no text)`;
-        } catch (e) {
-          return `Failed to call "${c.name}": ${String(e)}`;
-        }
-      }),
-    );
-
-    results.forEach((content, i) => {
-      messages.push({
-        role: "tool",
-        tool_call_id: toolCallsMsg[i].id,
-        content,
-      });
-    });
-
     if (toolRunCount >= MAX_TOOL_ROUNDS) {
+      isStreaming = false;
       hasMessage = true;
       message = `Stopped after ${MAX_TOOL_ROUNDS} tool rounds.`;
       return;
@@ -248,6 +258,9 @@
       });
 
       let toolDefs: ToolDefinition[];
+      let imap_look_accounts: SearchResult[]
+
+
       if (searchResults.length > 0) {
         // Use searched tools
         toolDefs = searchResults.map((r) => ({
@@ -256,6 +269,28 @@
           description: r.description,
           input_schema: r.input_schema,
         }));
+
+        const hasImapServer = toolDefs.some((t) => t.server === "imap-mail");
+        const hasImapListAccounts = toolDefs.some(
+          (t) => t.name === "imap_list_accounts",
+        );
+
+        if (hasImapServer && !hasImapListAccounts) {
+          imap_look_accounts = await invoke("search_tools", {
+            query: "list_imap_accounts",
+            limit: 1,
+          });
+          let map_look_accounts: ToolDefinition = {
+            name: imap_look_accounts[0].name,
+            server: imap_look_accounts[0].server,
+            description: imap_look_accounts[0].description,
+            input_schema: imap_look_accounts[0].input_schema
+          }
+          console.log(toolDefs)
+          console.log(imap_look_accounts)
+          console.log(map_look_accounts)
+          toolDefs.push(map_look_accounts);
+        }
       } else {
         // Fallback: get all tools
         const allTools: ToolDefinition[] = await invoke("mcp_tool_defs");
@@ -268,6 +303,7 @@
       if (apiEndpointAndKey) {
         apiKey = apiEndpointAndKey.apiKey ?? "";
         apiEndpoint = apiEndpointAndKey.apiEndpoint ?? "";
+        modelName = apiEndpointAndKey.modelName ?? ""
       }
     } catch (e) {
       hasMessage = true;
