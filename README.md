@@ -15,7 +15,8 @@ It allows me to connect my email accounts, calendar for now and schedule meeting
 - [ ] To add browsing support so I can also fetch content from websites to summarize and connect information 
 - [ ] To add skills support 
 - [ ] To add project structure - so I can switch between different projects
-- [ ] Add to do list to track work 
+- [ ] Add to do list to track work
+- [ ] Automation through CRON jobs
 
 ## Supported Repositories 
 
