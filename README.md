@@ -1,6 +1,6 @@
 # Zen Garden
 
-<img width="1254" height="1254" alt="zen-garden" src="https://github.com/user-attachments/assets/70f4c7e1-5af2-48d1-8a90-6e21b480f9bb" />
+<img width="250" height="250" alt="zen-garden" src="https://github.com/user-attachments/assets/70f4c7e1-5af2-48d1-8a90-6e21b480f9bb" />
 
 Zen Garden is a simple AI personal assistant that I am building for fun, to simplify life and work.  
 
