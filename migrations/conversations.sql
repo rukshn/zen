@@ -1,0 +1,18 @@
+CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    messages TEXT NOT NULL,
+    uuid TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    base INTEGER NOT NULL,
+    FOREIGN KEY (base) REFERENCES bases(id)
+);
+
+CREATE TRIGGER update_conversations_timestamp 
+AFTER UPDATE ON conversations
+FOR EACH ROW
+BEGIN
+    UPDATE conversations 
+    SET updated_at = CURRENT_TIMESTAMP 
+    WHERE id = NEW.id;
+END;
