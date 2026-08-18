@@ -3,6 +3,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
+  import { goto } from "$app/navigation";
   import type { Component } from "svelte";
 
   type Team = {
@@ -20,6 +21,10 @@
 
   let selected = $state<Team | undefined>(undefined);
   let activeTeam = $derived.by(() => selected ?? teams[0]);
+
+  const newBasePage = () => {
+    return goto("/new");
+  };
 </script>
 
 <Sidebar.Menu>
@@ -35,6 +40,13 @@
                 <activeTeam.logo class="size-3" />
               </div>
               <span class="truncate font-medium">{activeTeam.name}</span>
+            {:else}
+              <div
+                class="flex aspect-square size-5 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground"
+              >
+                <PlusIcon class="size-3" />
+              </div>
+              <span class="truncate font-medium">Select Workspace</span>
             {/if}
             <ChevronDownIcon class="opacity-50" />
           </Sidebar.MenuButton>
@@ -49,30 +61,34 @@
         <DropdownMenu.Label class="text-xs text-muted-foreground"
           >Teams</DropdownMenu.Label
         >
-        {#each teams as team, index (team.uuid)}
-          <DropdownMenu.Item
-            onSelect={() => (selected = team)}
-            class="gap-2 p-2"
-          >
-            <div
-              class="flex size-6 items-center justify-center rounded-xs border"
+        {#if teams.length > 0}
+          {#each teams as team, index (team.uuid)}
+            <DropdownMenu.Item
+              onSelect={() => (selected = team)}
+              class="gap-2 p-2"
             >
-              <team.logo class="size-4 shrink-0" />
-            </div>
-            {team.name}
-            <DropdownMenu.Shortcut>⌘{index + 1}</DropdownMenu.Shortcut>
+              <div
+                class="flex size-6 items-center justify-center rounded-xs border"
+              >
+                <team.logo class="size-4 shrink-0" />
+              </div>
+              {team.name}
+              <DropdownMenu.Shortcut>⌘{index + 1}</DropdownMenu.Shortcut>
+            </DropdownMenu.Item>
+          {/each}
+        {:else}
+          <DropdownMenu.Item class="gap-2 p-2">
+            <span class="text-xs text-mauve-500">No workspace available</span>
           </DropdownMenu.Item>
-        {/each}
+        {/if}
         <DropdownMenu.Separator />
-        <DropdownMenu.Item class="gap-2 p-2">
+        <DropdownMenu.Item onSelect={() => newBasePage()} class="gap-2 p-2">
           <div
             class="flex size-6 items-center justify-center rounded-md border bg-background"
           >
             <PlusIcon class="size-4" />
           </div>
-          <div class="font-medium text-muted-foreground">
-            <a href="/new">Add workspace</a>
-          </div>
+          <div class="font-medium text-muted-foreground">Add workspace</div>
         </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Root>
