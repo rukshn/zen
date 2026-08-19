@@ -2,29 +2,76 @@
   import { messageStore, type ChatMessage } from "$lib/store/message.svelte";
   import * as Avatar from "$lib/components/ui/avatar";
   import { loadProfile, profile } from "@/store/profile.svelte";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { marked } from "marked";
+  import { openUrl } from "@tauri-apps/plugin-opener";
 
   onMount(async () => {
     await loadProfile();
   });
 
-  const visibleMessages = messageStore.messages 
+  onMount(() => {
+    const w = window as Window & {
+      openExternalLink?: (url: string) => void;
+    };
+    w.openExternalLink = (url: string) => {
+      openUrl(url);
+    };
+    return () => {
+      delete w.openExternalLink;
+    };
+  });
+
+  // const visibleMessages =
   //  $derived(
   //   messageStore.messages.filter(
   //     (m) => (m.role === "user" || m.role === "assistant"),
   //   ),
   // );
 
-  // const visibleMessages = $derived(
-  //   messageStore.messages.filter(
-  //     (m) => m.role === "user" || (m.role === "assistant" && !m.tool_calls),
-  //   ),
-  // );
+  marked.use({
+    renderer: {
+      link({ href, title, tokens }) {
+        const text = this.parser.parseInline(tokens);
+        const titleAttr = title ? `title="${title}"` : "";
+
+        // Check if it's an external web link
+        if (href.startsWith("http://") || href.startsWith("https://")) {
+          return `<a href="${href}" ${titleAttr} onclick="event.preventDefault(); window.openExternalLink('${href}')">${text}</a>`;
+        }
+
+        // Return normal link for internal/relative anchors
+        return `<a href="${href}" ${titleAttr}>${text}</a>`;
+      },
+    },
+  });
+
+  const visibleMessages = $derived(
+    messageStore.messages.filter(
+      (m) => m.role === "user" || (m.role === "assistant" && !m.tool_calls),
+    ),
+  );
 
   const md2html = (md: string) => {
     return marked(md);
   };
+
+  let { viewport }: { viewport: HTMLElement | null } = $props();
+
+  $effect.pre(() => {
+    const last = visibleMessages.at(-1);
+    if (!last || !viewport) return;
+    last.content;
+    last.tool_calls;
+
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    const nearBottom = scrollTop + clientHeight >= scrollHeight - 120;
+    if (nearBottom) {
+      tick().then(() => {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+      });
+    }
+  });
 </script>
 
 <div class="py-3 px-4 space-y-6 max-w-3xl mx-auto mb-8">
