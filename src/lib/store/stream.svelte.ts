@@ -165,10 +165,8 @@ const finalizeTurn = async () => {
   streamAcc = resetStreamAcc();
   if (acc.toolCalls.size === 0) {
     streamState.isStreaming = false;
-    messageStore.activeConversation = crypto.randomUUID();
     try {
       const db = await getDb();
-   
       let activeConversation = undefined;
       if (!messageStore.activeConversation) {
         activeConversation = crypto.randomUUID()
