@@ -1,33 +1,37 @@
- export type ChatMessage = {
-    role: "user" | "assistant" | "tool";
-    content: string | null;
-    tools?: ToolDefinition[];
-    tool_calls?: ToolCall[];
-    tool_call_id?: string;
-  };
+import type { Conversation } from "./bases.svelte";
 
-   export type ToolCall = {
-    id: string;
-    type: "function";
-    function: { name: string; arguments: string };
-  };
+export type ChatMessage = {
+  role: "user" | "assistant" | "tool";
+  content: string | null;
+  tools?: ToolDefinition[];
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+};
 
-  export   type ToolDefinition = {
-    server: string;
+export type ToolCall = {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+};
+
+export type ToolDefinition = {
+  server: string;
+  name: string;
+  description?: string | null;
+  input_schema: Record<string, any>;
+};
+
+export type OpenAiTool = {
+  type: "function";
+  function: {
     name: string;
-    description?: string | null;
-    input_schema: Record<string, any>;
+    description: string;
+    parameters: Record<string, any>;
   };
+};
 
-
-    export type OpenAiTool = {
-    type: "function";
-    function: {
-      name: string;
-      description: string;
-      parameters: Record<string, any>;
-    };
-  };
-
-export const messageStore = $state<{messages: ChatMessage[]}>({messages: []})
-
+export const messageStore = $state<{
+  messages: ChatMessage[];
+  activeConversation: string | undefined;
+  conversations: Conversation[]
+}>({ messages: [], activeConversation: undefined, conversations: [] });

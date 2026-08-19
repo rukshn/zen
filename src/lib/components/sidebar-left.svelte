@@ -2,7 +2,6 @@
   import AudioWaveformIcon from "@lucide/svelte/icons/audio-waveform";
   import BlocksIcon from "@lucide/svelte/icons/blocks";
   import CalendarIcon from "@lucide/svelte/icons/calendar";
-  import CommandIcon from "@lucide/svelte/icons/command";
   import HouseIcon from "@lucide/svelte/icons/house";
   import InboxIcon from "@lucide/svelte/icons/inbox";
   import MessageCircleQuestionIcon from "@lucide/svelte/icons/message-circle-question";
@@ -18,23 +17,41 @@
   import { onMount, type ComponentProps } from "svelte";
   import { getDb } from "@/store/dbstore";
   import { workspaceStore, type Base } from "@/store/bases.svelte";
+  import { type Team, type Conversation } from "@/store/bases.svelte";
+  import { messageStore } from "@/store/message.svelte";
 
-  let teams = $derived( 
+  let teams: Team[] = $derived(
     workspaceStore.workspaces.map((team) => ({
       name: team.name,
       uuid: team.uuid,
       base_path: team.base_path,
-      logo: AudioWaveformIcon
-    })
-    )
-  )
+      logo: AudioWaveformIcon,
+      created_at: team.created_at,
+      id: team.id,
+    })),
+  );
+
+  let sidebarChats = $derived(
+    messageStore.conversations.map((message) => ({
+      firstMessage: JSON.parse(message.messages)[0].content as string,
+      uuid: message.uuid
+    })),
+  );
+
   onMount(async () => {
     try {
       const db = await getDb();
-      const getTeams:Base[] = await db.select("SELECT * FROM bases");
+      const getTeams: Base[] = await db.select("SELECT * FROM bases");
 
-      workspaceStore.workspaces = getTeams
+      workspaceStore.workspaces = getTeams;
 
+      const activeProject = workspaceStore.activeTeam?.id;
+
+      const getConversations: Conversation[] = await db.select(
+        "SELECT * FROM conversations WHERE base = $1",
+        [activeProject],
+      );
+      messageStore.conversations = getConversations;
     } catch (e) {
       console.error("error connecting to database", e);
     }
@@ -93,113 +110,6 @@
         icon: MessageCircleQuestionIcon,
       },
     ],
-    workspaces: [
-      {
-        name: "Personal Life Management",
-        emoji: "🏠",
-        pages: [
-          {
-            name: "Daily Journal & Reflection",
-            url: "#",
-            emoji: "📔",
-          },
-          {
-            name: "Health & Wellness Tracker",
-            url: "#",
-            emoji: "🍏",
-          },
-          {
-            name: "Personal Growth & Learning Goals",
-            url: "#",
-            emoji: "🌟",
-          },
-        ],
-      },
-      {
-        name: "Professional Development",
-        emoji: "💼",
-        pages: [
-          {
-            name: "Career Objectives & Milestones",
-            url: "#",
-            emoji: "🎯",
-          },
-          {
-            name: "Skill Acquisition & Training Log",
-            url: "#",
-            emoji: "🧠",
-          },
-          {
-            name: "Networking Contacts & Events",
-            url: "#",
-            emoji: "🤝",
-          },
-        ],
-      },
-      {
-        name: "Creative Projects",
-        emoji: "🎨",
-        pages: [
-          {
-            name: "Writing Ideas & Story Outlines",
-            url: "#",
-            emoji: "✍️",
-          },
-          {
-            name: "Art & Design Portfolio",
-            url: "#",
-            emoji: "🖼️",
-          },
-          {
-            name: "Music Composition & Practice Log",
-            url: "#",
-            emoji: "🎵",
-          },
-        ],
-      },
-      {
-        name: "Home Management",
-        emoji: "🏡",
-        pages: [
-          {
-            name: "Household Budget & Expense Tracking",
-            url: "#",
-            emoji: "💰",
-          },
-          {
-            name: "Home Maintenance Schedule & Tasks",
-            url: "#",
-            emoji: "🔧",
-          },
-          {
-            name: "Family Calendar & Event Planning",
-            url: "#",
-            emoji: "📅",
-          },
-        ],
-      },
-      {
-        name: "Travel & Adventure",
-        emoji: "🧳",
-        pages: [
-          {
-            name: "Trip Planning & Itineraries",
-            url: "#",
-            emoji: "🗺️",
-          },
-          {
-            name: "Travel Bucket List & Inspiration",
-            url: "#",
-            emoji: "🌎",
-          },
-          {
-            name: "Travel Journal & Photo Gallery",
-            url: "#",
-            emoji: "📸",
-          },
-        ],
-      },
-    ],
   };
 
   let {
@@ -210,11 +120,11 @@
 
 <Sidebar.Root bind:ref class="border-e-0" {...restProps}>
   <Sidebar.Header>
-    <TeamSwitcher teams={teams} />
+    <TeamSwitcher {teams} />
     <NavMain items={data.navMain} />
   </Sidebar.Header>
   <Sidebar.Content>
-    <NavWorkspaces workspaces={data.workspaces} />
+    <NavWorkspaces {sidebarChats} />
     <NavSecondary items={data.navSecondary} class="mt-auto" />
   </Sidebar.Content>
   <Sidebar.Rail />
