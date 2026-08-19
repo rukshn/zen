@@ -4,14 +4,11 @@
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import { goto } from "$app/navigation";
-  import type { Component } from "svelte";
-
-  type Team = {
-    name: string;
-    logo: Component;
-    uuid: string;
-    base_path: string;
-  };
+  import { onMount } from "svelte";
+  import { getDb } from "@/store/dbstore";
+  import { workspaceStore } from "@/store/bases.svelte";
+  import type { Team } from "@/store/bases.svelte";
+  const ACTIVE_PROJECT = "active_project";
 
   let {
     teams,
@@ -25,6 +22,35 @@
   const newBasePage = () => {
     return goto("/new");
   };
+
+  const swtichTeams = async (team: Team) => {
+    selected = team;
+    const db = await getDb();
+    db.execute(
+      "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
+      [ACTIVE_PROJECT, JSON.stringify(team)],
+    );
+  };
+
+  onMount(async () => {
+    const db = await getDb();
+    const activeProject: { key: string; value: string }[] = await db.select(
+      "SELECT * FROM settings WHERE key = $1",
+      [ACTIVE_PROJECT],
+    );
+
+    if (activeProject) {
+      const parsedTeam = JSON.parse(activeProject[0]?.value);
+
+      workspaceStore.activeTeam = {
+        name: parsedTeam.name,
+        uuid: parsedTeam.uuid,
+        base_path: parsedTeam.base_path,
+        created_at: parsedTeam.created_at,
+        id: parsedTeam.id,
+      };
+    }
+  });
 </script>
 
 <Sidebar.Menu>
@@ -64,7 +90,7 @@
         {#if teams.length > 0}
           {#each teams as team, index (team.uuid)}
             <DropdownMenu.Item
-              onSelect={() => (selected = team)}
+              onSelect={() => swtichTeams(team)}
               class="gap-2 p-2"
             >
               <div
