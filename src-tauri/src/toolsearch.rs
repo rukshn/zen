@@ -88,6 +88,72 @@ fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Common filler words dropped from the query before scoring.
+const STOPWORDS: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "could", "do",
+    "does", "for", "from", "have", "has", "how", "i", "in", "into", "is", "it",
+    "its", "me", "my", "of", "on", "or", "please", "so", "the", "their", "there",
+    "this", "that", "to", "up", "want", "we", "what", "when", "which", "who",
+    "with", "you", "your",
+];
+
+/// Map common user wording onto the tool vocabulary so natural-language
+/// queries (e.g. "meetings tomorrow") match tools ("events").
+const SYNONYMS: &[(&str, &[&str])] = &[
+    ("meeting", &["event"]),
+    ("appointment", &["event"]),
+    ("schedule", &["calendar", "event"]),
+    ("calendar", &["event"]),
+    ("agenda", &["calendar", "event"]),
+    ("email", &["imap", "email"]),
+    ("mail", &["imap", "email"]),
+    ("inbox", &["imap", "email"]),
+    ("message", &["imap", "email"]),
+    ("send", &["send"]),
+    ("compose", &["send"]),
+    ("write", &["send"]),
+    ("add", &["create"]),
+    ("create", &["create"]),
+    ("new", &["create"]),
+    ("book", &["create"]),
+    ("make", &["create"]),
+    ("delete", &["delete"]),
+    ("remove", &["delete"]),
+    ("cancel", &["delete"]),
+    ("list", &["list", "get"]),
+    ("show", &["list", "get"]),
+    ("get", &["list", "get"]),
+    ("view", &["list", "get"]),
+    ("fetch", &["list", "get"]),
+    ("read", &["get"]),
+    ("search", &["search"]),
+    ("find", &["search"]),
+    ("reply", &["reply"]),
+    ("respond", &["reply"]),
+    ("forward", &["forward"]),
+    ("unread", &["unread"]),
+    ("spam", &["spam"]),
+    ("account", &["account"]),
+    ("accounts", &["account"]),
+];
+
+/// Filter stopwords from the query and expand terms with their synonyms.
+fn expand_query(tokens: &[String]) -> Vec<String> {
+    let mut expanded: Vec<String> = Vec::new();
+    for term in tokens {
+        if STOPWORDS.contains(&term.as_str()) {
+            continue;
+        }
+        expanded.push(term.clone());
+        for (word, repls) in SYNONYMS {
+            if term == word {
+                expanded.extend(repls.iter().map(|s| s.to_string()));
+            }
+        }
+    }
+    expanded
+}
+
 impl Bm25Index {
     pub fn build(catalog: &ToolCatalog) -> Self {
         let docs: Vec<Vec<String>> = catalog
@@ -132,12 +198,15 @@ impl Bm25Index {
 
     /// Returns (doc_index, score) sorted descending by score
     pub fn search(&self, query: &str, limit: usize) -> Vec<(usize, f64)> {
-        let query_terms = tokenize(query);
+        let terms = expand_query(&tokenize(query));
+        if terms.is_empty() {
+            return Vec::new();
+        }
         let mut scores: Vec<(usize, f64)> = (0..self.n_docs)
             .map(|i| {
                 let doc = &self.docs[i];
                 let dl = self.doc_len[i] as f64;
-                let score: f64 = query_terms
+                let score: f64 = terms
                     .iter()
                     .map(|term| {
                         let tf = doc.iter().filter(|t| *t == term).count() as f64;
@@ -194,14 +263,53 @@ pub struct SearchResult {
     pub score: f64,
 }
 
+/// Fallback set of entry-point tools returned when nothing scores above zero,
+/// so the frontend always has something usable to offer the model.
+fn default_tool_indices(catalog: &ToolCatalog, limit: usize) -> Vec<(usize, f64)> {
+    const DEFAULTS: &[&str] = &[
+        "google-calendar_manage-accounts",
+        "google-calendar_list-calendars",
+        "google-calendar_get-current-time",
+        "google-calendar_list-events",
+        "imap-mail_imap_list_accounts",
+        "imap-mail_imap_get_latest_emails",
+        "imap-mail_imap_search_emails",
+        "imap-mail_imap_send_email",
+        "imap-mail_imap_get_unread_count",
+    ];
+    let mut idx: Vec<(usize, f64)> = DEFAULTS
+        .iter()
+        .filter_map(|d| {
+            catalog
+                .tools
+                .iter()
+                .position(|t| t.name == *d)
+                .map(|i| (i, 0.0))
+        })
+        .collect();
+    if idx.len() < limit {
+        for (i, _t) in catalog.tools.iter().enumerate() {
+            if idx.len() >= limit {
+                break;
+            }
+            if !idx.iter().any(|(j, _)| *j == i) {
+                idx.push((i, 0.0));
+            }
+        }
+    }
+    idx
+}
+
 #[tauri::command]
 pub fn search_tools(query: String, limit: Option<usize>, state: State<Mutex<Option<AppState>>>) -> Vec<SearchResult> {
     let limit = limit.unwrap_or(10);
     let guard = state.lock().unwrap();
     if let Some(app_state) = guard.as_ref() {
-        app_state
-            .index
-            .search(&query, limit)
+        let mut results = app_state.index.search(&query, limit);
+        if results.is_empty() {
+            results = default_tool_indices(&app_state.catalog, limit);
+        }
+        results
             .into_iter()
             .map(|(idx, score)| {
                 let t = &app_state.catalog.tools[idx];
