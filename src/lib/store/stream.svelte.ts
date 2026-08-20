@@ -8,6 +8,7 @@ import {
 import { checkCalendarConnection, getAPIKey } from "@/funcs";
 import { getDb } from "./dbstore";
 import { workspaceStore } from "./bases.svelte";
+import {encode} from "@toon-format/toon"
 
 type OpenAiTool = {
   type: "function";
@@ -43,6 +44,31 @@ const toOpenAiTools = (defs: ToolDefinition[]): OpenAiTool[] =>
       parameters: d.input_schema,
     },
   }));
+
+const hasTool = (defs: ToolDefinition[], name: string): boolean =>
+  defs.some((t) => t.name === name || t.name.endsWith(`_${name}`));
+
+const ensureAccountTools = (
+  toolDefs: ToolDefinition[],
+  source: ToolDefinition[],
+) => {
+  const findDef = (name: string) =>
+    source.find(
+      (t) => t.name === name || t.name === `${t.server}_${name}`,
+    );
+
+  const ensure = (server: string, name: string) => {
+    if (toolDefs.some((t) => t.server === server) && !hasTool(toolDefs, name)) {
+      const d = findDef(name);
+      if (d) toolDefs.push(d);
+    }
+  };
+
+  ensure("imap-mail", "imap_list_accounts");
+  ensure("google-calendar", "manage-accounts");
+  ensure("google-calendar", "get-current-time");
+  ensure("google-calendar", "list-calendars");
+};
 
 export const streamState = $state({
   isStreaming: false,
@@ -169,17 +195,17 @@ const finalizeTurn = async () => {
       const db = await getDb();
       let activeConversation = undefined;
       if (!messageStore.activeConversation) {
-        activeConversation = crypto.randomUUID()
-        messageStore.activeConversation = activeConversation
+        activeConversation = crypto.randomUUID();
+        messageStore.activeConversation = activeConversation;
       } else {
-        activeConversation = messageStore.activeConversation
+        activeConversation = messageStore.activeConversation;
       }
 
       const addConversation = db.execute(
         `INSERT INTO conversations (messages, uuid, base) VALUES ($1, $2, $3) ON CONFLICT (uuid) DO UPDATE SET messages = $1`,
         [
           JSON.stringify(messageStore.messages),
-          activeConversation,    
+          activeConversation,
           workspaceStore.activeTeam?.id,
         ],
       );
@@ -275,8 +301,7 @@ export const sendRequest = async (userMessage: string) => {
       limit: 10,
     });
 
-    let toolDefs: ToolDefinition[];
-    let imap_look_accounts: SearchResult[];
+let toolDefs: ToolDefinition[];
 
     if (searchResults.length > 0) {
       toolDefs = searchResults.map((r) => ({
@@ -287,29 +312,103 @@ export const sendRequest = async (userMessage: string) => {
       }));
 
       const hasImapServer = toolDefs.some((t) => t.server === "imap-mail");
-      const hasImapListAccounts = toolDefs.some(
-        (t) => t.name === "imap_list_accounts",
-      );
-
-      if (hasImapServer && !hasImapListAccounts) {
-        imap_look_accounts = await invoke("search_tools", {
+      if (hasImapServer && !hasTool(toolDefs, "imap_list_accounts")) {
+        const imapLook = await invoke<SearchResult[]>("search_tools", {
           query: "list_imap_accounts",
           limit: 1,
         });
-        let map_look_accounts: ToolDefinition = {
-          name: imap_look_accounts[0].name,
-          server: imap_look_accounts[0].server,
-          description: imap_look_accounts[0].description,
-          input_schema: imap_look_accounts[0].input_schema,
-        };
-        console.log(toolDefs);
-        console.log(imap_look_accounts);
-        console.log(map_look_accounts);
-        toolDefs.push(map_look_accounts);
+        if (imapLook[0]) {
+          toolDefs.push({
+            name: imapLook[0].name,
+            server: imapLook[0].server,
+            description: imapLook[0].description,
+            input_schema: imapLook[0].input_schema,
+          });
+        }
+      }
+
+      const hasCalendarServer = toolDefs.some(
+        (t) => t.server === "google-calendar",
+      );
+      if (hasCalendarServer && !hasTool(toolDefs, "manage-accounts")) {
+        const calLook = await invoke<SearchResult[]>("search_tools", {
+          query: "list google calendar accounts",
+          limit: 1,
+        });
+        if (calLook[0]) {
+          toolDefs.push({
+            name: calLook[0].name,
+            server: calLook[0].server,
+            description: calLook[0].description,
+            input_schema: calLook[0].input_schema,
+          });
+        }
       }
     } else {
       const allTools: ToolDefinition[] = await invoke("mcp_tool_defs");
-      toolDefs = allTools;
+      console.log("no search tools found, trying local tool picker");
+      const pickerUrl = "http://127.0.0.1:9090";
+      toolDefs = [];
+      try {
+        const health = await fetch(`${pickerUrl}/health`);
+        if (health.ok) {
+          const toolList = allTools
+            .map(
+              (t) =>
+                `- ${t.server}_${t.name} || ${(t.description ?? "").slice(0, 120)}`,
+            )
+            .join("\n");
+
+          const messages = [
+            {
+              role: "system",
+              content:
+                "You are a tool picker assistant for the user query. Pick the most relevant tool names from the list. Reply with ONLY the exact tool names separated by commas. No explanations. If no tool fits, reply with exactly: none",
+            },
+            {
+              role: "user",
+              content: `User request: ${userMessage}\n\nTools:\n${toolList}`,
+            },
+          ];
+
+          const localToolSearch = await fetch(
+            `${pickerUrl}/v1/chat/completions`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "lfm2.5-1.2b-instruct",
+                temperature: 0,
+                max_tokens: 64,
+                stream: false,
+                messages,
+              }),
+            },
+          );
+
+          if (localToolSearch.ok) {
+            const localToolSearchJson = await localToolSearch.json();
+            const localToolsSearchResults: string =
+              localToolSearchJson?.choices?.[0]?.message?.content ?? "";
+            const picked = localToolsSearchResults
+              .split(",")
+              .map((n) => n.trim().replace(/["'`]/g, ""))
+              .filter(Boolean);
+            console.log("local picker picked:", picked);
+
+            toolDefs = allTools.filter((t) =>
+              picked.some(
+                (p) =>
+                  p.toLowerCase() === `${t.server}_${t.name}`.toLowerCase() ||
+                  p.toLowerCase() === t.name.toLowerCase(),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        console.log("local tool picker failed:", e);
+      }
+      ensureAccountTools(toolDefs, allTools);
     }
 
     toolLookup = new Map(toolDefs.map((d) => [d.name, d.server]));
