@@ -9,6 +9,7 @@ It allows me to connect my email accounts, calendar for now and schedule meeting
 ## Features 
 
 - Bring your model and keys - Set API endpoint, Key and Model name and you can use any model you like.
+- BM25 based search for tools, and via a small local model via llama.cpp when BM25 fails to return tools (optional)
 
 ## Plan 
 
@@ -29,4 +30,10 @@ It allows me to connect my email accounts, calendar for now and schedule meeting
 
 #### Inspiration 
 
-From the Gstak / Gbrain and the resent talk by Garry Tan about Gstak / Gbrain - https://www.ycombinator.com/library/WX-garry-tan-own-your-intelligence
+- From the Gstak / Gbrain and the resent talk by Garry Tan about Gstak / Gbrain - https://www.ycombinator.com/library/WX-garry-tan-own-your-intelligence
+
+- Building and structing an AI native company - https://youtu.be/Z3JyAqh4ixg
+
+### Disclaimer 
+
+- I am using DeepSeekV4 mainly for backend rust code generation and also code documentation. I am reviewing the code before I add them to the codebase. 
