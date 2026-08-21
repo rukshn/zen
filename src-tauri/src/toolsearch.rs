@@ -135,6 +135,18 @@ const SYNONYMS: &[(&str, &[&str])] = &[
     ("spam", &["spam"]),
     ("account", &["account"]),
     ("accounts", &["account"]),
+    ("browse", &["browser", "navigate", "fetch", "web"]),
+    ("website", &["browser", "navigate", "web"]),
+    ("web", &["browser", "navigate"]),
+    ("internet", &["browser", "web"]),
+    ("open", &["navigate"]),
+    ("visit", &["navigate"]),
+    ("click", &["click"]),
+    ("summarize", &["markdown", "content"]),
+    ("summary", &["markdown", "content"]),
+    ("article", &["markdown", "content"]),
+    ("url", &["goto", "link"]),
+    ("link", &["links"]),
 ];
 
 /// Filter stopwords from the query and expand terms with their synonyms.

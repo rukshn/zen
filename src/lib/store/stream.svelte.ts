@@ -5,7 +5,12 @@ import {
   type ChatMessage,
   type ToolDefinition,
 } from "$lib/store/message.svelte";
-import { checkCalendarConnection, getAPIKey } from "@/funcs";
+import {
+  checkCalendarConnection,
+  connectLightpanda,
+  getAPIKey,
+  refreshRegistry,
+} from "@/funcs";
 import { getDb } from "./dbstore";
 import { workspaceStore } from "./bases.svelte";
 import {encode} from "@toon-format/toon"
@@ -74,6 +79,7 @@ export const streamState = $state({
   isStreaming: false,
   hasMessage: false,
   message: "",
+  tokenUsage: { prompt: 0, completion: 0, total: 0 },
 });
 
 let initialized = false;
@@ -84,7 +90,7 @@ let modelName = "";
 let apiTools: OpenAiTool[] = [];
 let toolLookup = new Map<string, string>();
 let toolRunCount = 0;
-const MAX_TOOL_ROUNDS = 6;
+const MAX_TOOL_ROUNDS = 12;
 
 let streamAcc: {
   assistantIndex: number | null;
@@ -103,12 +109,27 @@ export const initStreaming = async () => {
   if (initialized) return;
   initialized = true;
 
+  // Fire-and-forget: install/update the lightpanda binary (first run may
+  // download ~50MB), connect its MCP server and refresh the tool catalog.
+  void (async () => {
+    if (await connectLightpanda()) {
+      await refreshRegistry();
+    }
+  })();
+
   let unlisteners: UnlistenFn[] = [];
 
   unlisteners = await Promise.all([
     listen<{ requestId: string; chunk: any }>("llm:delta", (event) => {
       const { requestId, chunk } = event.payload;
       if (requestId !== activeRequestId) return;
+
+      const usage = chunk?.usage;
+      if (usage?.prompt_tokens != null) {
+        streamState.tokenUsage.prompt += usage.prompt_tokens;
+        streamState.tokenUsage.completion += usage.completion_tokens ?? 0;
+        streamState.tokenUsage.total += usage.total_tokens ?? 0;
+      }
 
       const delta = chunk?.choices?.[0]?.delta;
       const text: string | undefined = delta?.content;
@@ -162,8 +183,15 @@ export const initStreaming = async () => {
 const runStream = async () => {
   activeRequestId = crypto.randomUUID();
   streamState.isStreaming = true;
-  const apiMessages = messageStore.messages.map(
-    ({ tools: _tools, ...msg }) => msg,
+  const apiMessages = messageStore.messages.map(({ tools: _tools, ...msg }) =>
+    msg.role === "user"
+      ? msg
+      : {
+          role: msg.role,
+          content: encode({ role: msg.role, content: msg.content }),
+          ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
+          ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
+        },
   );
 
   try {
@@ -174,6 +202,7 @@ const runStream = async () => {
         messages: apiMessages,
         tools: apiTools,
         tool_choice: "auto",
+        stream_options: { include_usage: true },
       },
       apiKey,
       apiEndpoint,
@@ -433,5 +462,6 @@ let toolDefs: ToolDefinition[];
   messageStore.messages.push({ role: "user", content: userMessage });
   toolRunCount = 0;
   streamAcc = resetStreamAcc();
+  streamState.tokenUsage = { prompt: 0, completion: 0, total: 0 };
   await runStream();
 };

@@ -69,6 +69,36 @@ export const connectImapMail = async () => {
   }
 };
 
+export type LightpandaStatus = {
+  installed: boolean;
+  updating: boolean;
+  version: string | null;
+  error: string | null;
+};
+
+export const connectLightpanda = async (): Promise<boolean> => {
+  try {
+    const tools = await invoke<unknown[]>("mcp_connect", {
+      server: "lightpanda",
+      clientId: "",
+      clientSecret: "",
+    });
+    return tools.length > 0;
+  } catch (e) {
+    console.log("lightpanda connect failed:", e);
+    return false;
+  }
+};
+
+export const getLightpandaStatus = async (): Promise<LightpandaStatus | null> => {
+  try {
+    return await invoke<LightpandaStatus>("lightpanda_status");
+  } catch (e) {
+    console.log("lightpanda status failed:", e);
+    return null;
+  }
+};
+
 export const openImapSetupWizard = async (): Promise<void> => {
   try {
     await invoke("imap_open_setup_wizard");

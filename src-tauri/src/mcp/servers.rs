@@ -2,6 +2,7 @@ use std::path::Path;
 
 pub const GOOGLE_CALENDAR_SERVER: &str = "google-calendar";
 pub const IMAP_MAIL_SERVER: &str = "imap-mail";
+pub const LIGHTPANDA_SERVER: &str = "lightpanda";
 
 pub struct McpServerConfig {
 	pub command: String,
@@ -124,6 +125,27 @@ pub fn resolve(server: &str, credentials_path: Option<&str>) -> Result<McpServer
 			command: "npx".to_string(),
 			args: vec!["-y".to_string(), "imap-mcp-server".to_string()],
 			env: Vec::new(),
+		}),
+		other => Err(format!("unknown MCP server: {other}")),
+	}
+}
+
+/// Config for servers whose binary is resolved by the caller (e.g. the
+/// managed lightpanda install).
+pub fn resolve_with_binary(server: &str, binary: &str) -> Result<McpServerConfig, String> {
+	match server {
+		LIGHTPANDA_SERVER => Ok(McpServerConfig {
+			command: binary.to_string(),
+			args: vec![
+				"mcp".to_string(),
+				"--obey-robots".to_string(),
+				"--log-level".to_string(),
+				"error".to_string(),
+			],
+			env: vec![(
+				"LIGHTPANDA_DISABLE_TELEMETRY".to_string(),
+				"true".to_string(),
+			)],
 		}),
 		other => Err(format!("unknown MCP server: {other}")),
 	}

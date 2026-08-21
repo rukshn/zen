@@ -160,7 +160,12 @@ pub async fn mcp_connect(
 	} else {
 		None
 	};
-	let cfg = servers::resolve(&server, credentials_path.as_deref())?;
+	let cfg = if server == servers::LIGHTPANDA_SERVER {
+		let bin = crate::lightpanda::ensure_ready(&app).await?;
+		servers::resolve_with_binary(&server, &bin.to_string_lossy().into_owned())?
+	} else {
+		servers::resolve(&server, credentials_path.as_deref())?
+	};
 
 	let mut command = Command::new(&cfg.command);
 	command.args(&cfg.args);

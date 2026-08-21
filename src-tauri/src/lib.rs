@@ -1,3 +1,4 @@
+mod lightpanda;
 mod llm;
 mod mcp;
 mod toolsearch;
@@ -21,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .manage(McpManager::default())
         .manage(WizardManager::default())
+        .manage(lightpanda::LightpandaManager::default())
         .manage(Mutex::new(None::<AppState>))
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -37,6 +39,7 @@ pub fn run() {
                 },
             });
             app.state::<Mutex<Option<AppState>>>().lock().unwrap().replace(state);
+            lightpanda::spawn_background_update(app_handle.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +52,7 @@ pub fn run() {
             mcp::client::mcp_disconnect,
             mcp::client::mcp_server_auth,
             mcp::client::imap_open_setup_wizard,
+            lightpanda::lightpanda_status,
             llm::llm_stream_chat,
             toolsearch::search_tools,
         ])

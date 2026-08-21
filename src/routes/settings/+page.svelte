@@ -14,7 +14,13 @@
   import { onMount } from "svelte";
   import EmailIcon from "@iconify-svelte/mage/email";
   import RefreshIcon from "@iconify-svelte/mage/refresh";
+  import GlobeIcon from "@iconify-svelte/tabler/world";
   import { checkImapConnection, openImapSetupWizard } from "$lib/funcs";
+  import {
+    connectLightpanda,
+    getLightpandaStatus,
+    type LightpandaStatus,
+  } from "$lib/funcs";
   import { getDb } from "@/store/dbstore";
   import Label from "@/components/ui/label/label.svelte";
 
@@ -39,6 +45,29 @@
   let avatarError = $state("");
   let apiEndpoint = $state("");
   let modelName = $state("");
+  let lpStatus = $state<LightpandaStatus | null>(null);
+  let lpConnecting = $state(false);
+
+  const browserLabel = $derived.by(() => {
+    if (lpConnecting) return "Setting up browser…";
+    if (!lpStatus) return "Connect Browser";
+    if (lpStatus.updating) return "Browser - Updating…";
+    if (lpStatus.installed) {
+      return `Browser - Connected${lpStatus.version ? ` (${lpStatus.version})` : ""}`;
+    }
+    return "Connect Browser";
+  });
+
+  const connectBrowser = async () => {
+    lpConnecting = true;
+    try {
+      await connectLightpanda();
+      await invoke("mcp_tool_defs");
+    } finally {
+      lpStatus = await getLightpandaStatus();
+      lpConnecting = false;
+    }
+  };
 
   const readAsDataUrl = (file: File) => {
     const reader = new FileReader();
@@ -114,6 +143,7 @@
     await connectCalendar();
     const imapAccounts = await checkImapConnection();
     connectedAccounts = imapAccounts.length;
+    lpStatus = await getLightpandaStatus();
     await loadProfile();
   });
 
@@ -314,6 +344,10 @@
             {connectedAccounts === 0
               ? `Connect Email`
               : `Connected Emails - ${connectedAccounts}`}
+          </Button>
+          <Button variant="secondary" onclick={connectBrowser} disabled={lpConnecting}>
+            <GlobeIcon />
+            {browserLabel}
           </Button>
           <Button variant="secondary" onclick={updateConnections}>
             <RefreshIcon />
